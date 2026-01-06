@@ -78,6 +78,100 @@ def analyze_sequence(sequence):
         'sequence': sequence
     }
 
+def display_physicochemical_properties(result):
+    """显示理化性质分析结果"""
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 基本信息")
+        st.markdown(f"**序列长度**: {result['length']} 个氨基酸")
+        st.markdown(f"**分子量**: {result['mw_kda']:.2f} kDa ({result['mw_da']:.0f} Da)")
+        st.markdown(f"**等电点(pI)**: {result['pI']:.2f}")
+        st.markdown(f"**平均疏水性(GRAVY)**: {result['gravy']:.3f}")
+        
+        # 解释疏水性
+        if result['gravy'] > 0.5:
+            hydrophobicity = "强疏水性"
+        elif result['gravy'] > 0:
+            hydrophobicity = "弱疏水性"
+        elif result['gravy'] > -0.5:
+            hydrophobicity = "弱亲水性"
+        else:
+            hydrophobicity = "强亲水性"
+        st.markdown(f"**疏水性描述**: {hydrophobicity}")
+    
+    with col2:
+        st.markdown("### 消光系数")
+        # st.markdown(f"**无二硫键**: {result['ext_no_cys']:.0f} M⁻¹cm⁻¹")
+        # st.markdown(f"**有二硫键**: {result['ext_with_cys']:.0f} M⁻¹cm⁻¹")
+        st.markdown(f"**Abs 0.1% (1 mg/ml) - 无二硫键**: {result['abs_no_cys']:.3f}")
+        st.markdown(f"**Abs 0.1% (1 mg/ml) - 有二硫键**: {result['abs_with_cys']:.3f}")
+    
+    # 氨基酸组成分析
+    st.markdown("### 氨基酸组成分析")
+    
+    # 获取氨基酸组成并排序
+    aa_comp = result['aa_comp']
+    # 按照百分比从高到低排序
+    sorted_aa = sorted(aa_comp.items(), key=lambda x: x[1], reverse=True)
+    
+    # 显示前10个最丰富的氨基酸
+    st.markdown("#### 主要氨基酸（按丰度排序）")
+    cols = st.columns(5)
+    for j, (aa, percentage) in enumerate(sorted_aa[:10]):
+        with cols[j % 5]:
+            st.markdown(
+                f"""
+                <div class="metric-box">
+                    <p style="font-size: 1.2rem; font-weight: bold; margin-bottom: 5px;">{aa}</p>
+                    <p style="margin: 0; color: #333;">{percentage:.1%}</p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+    
+    # 显示疏水性和极性氨基酸统计
+    hydrophobic = set(['A', 'I', 'L', 'M', 'F', 'W', 'V', 'P'])
+    polar = set(['N', 'C', 'Q', 'S', 'T', 'Y'])
+    charged = set(['R', 'H', 'K', 'D', 'E'])
+    
+    hydrophobic_count = sum(aa_comp.get(aa, 0) for aa in hydrophobic)
+    polar_count = sum(aa_comp.get(aa, 0) for aa in polar)
+    charged_count = sum(aa_comp.get(aa, 0) for aa in charged)
+    
+    st.markdown("#### 氨基酸分类统计")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(
+            f"""
+            <div class="metric-box">
+                <p style="margin: 0; color: #666;">疏水性氨基酸</p>
+                <p style="font-size: 1.2rem; font-weight: bold; margin: 5px 0;">{hydrophobic_count:.1%}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    with col2:
+        st.markdown(
+            f"""
+            <div class="metric-box">
+                <p style="margin: 0; color: #666;">极性氨基酸</p>
+                <p style="font-size: 1.2rem; font-weight: bold; margin: 5px 0;">{polar_count:.1%}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    with col3:
+        st.markdown(
+            f"""
+            <div class="metric-box">
+                <p style="margin: 0; color: #666;">带电氨基酸</p>
+                <p style="font-size: 1.2rem; font-weight: bold; margin: 5px 0;">{charged_count:.1%}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
 # 设置页面配置
 st.set_page_config(
     page_title="蛋白质理化性质分析工具",
@@ -598,11 +692,21 @@ st.markdown("""
 if st.button("🧪 分析所有输入序列的理化性质", key="analyze_all_bottom"):
     merged_sequence = ""
     valid_sequences_found = False
+    individual_results = []  # 存储单独结果
+
     for i in range(len(st.session_state.sequences)):
         sequence = extract_sequence_from_input(st.session_state.sequences[i])
         if sequence:
             valid_sequences_found = True
             merged_sequence += sequence  # 合并所有有效序列
+            
+            # 单独计算并保存结果
+            single_result = analyze_sequence(sequence)
+            individual_results.append({
+                'index': i,
+                'result': single_result
+            })
+            
     if not valid_sequences_found:
         st.warning("请先输入有效的氨基酸序列")
     else:
@@ -612,99 +716,24 @@ if st.button("🧪 分析所有输入序列的理化性质", key="analyze_all_bo
         # 调用分析函数
         result = analyze_sequence(merged_sequence)
         st.session_state.last_analysis_result = result
+        # 保存单独分析结果
+        st.session_state.individual_analysis_results = individual_results
 
 # 显示合并分析结果
 if st.session_state.last_analysis_result is not None and st.session_state.get('current_analysis_index') == -1:
+    # 显示合并结果
     with st.expander(f"📊 {st.session_state.analysis_info}", expanded=True):
-        result = st.session_state.last_analysis_result
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("### 基本信息")
-            st.markdown(f"**序列长度**: {result['length']} 个氨基酸")
-            st.markdown(f"**分子量**: {result['mw_kda']:.2f} kDa ({result['mw_da']:.0f} Da)")
-            st.markdown(f"**等电点(pI)**: {result['pI']:.2f}")
-            st.markdown(f"**平均疏水性(GRAVY)**: {result['gravy']:.3f}")
-            
-            # 疏水性描述
-            if result['gravy'] > 0.5:
-                hydrophobicity = "强疏水性"
-            elif result['gravy'] > 0:
-                hydrophobicity = "弱疏水性"
-            elif result['gravy'] > -0.5:
-                hydrophobicity = "弱亲水性"
-            else:
-                hydrophobicity = "强亲水性"
-            st.markdown(f"**疏水性描述**: {hydrophobicity}")
+        display_physicochemical_properties(st.session_state.last_analysis_result)
         
-        with col2:
-            st.markdown("### 消光系数")
-            st.markdown(f"**Abs 0.1% (1 mg/ml) - 无二硫键**: {result['abs_no_cys']:.3f}")
-            st.markdown(f"**Abs 0.1% (1 mg/ml) - 有二硫键**: {result['abs_with_cys']:.3f}")
-        
-        # 氨基酸组成分析
-        st.markdown("### 氨基酸组成分析")
-        aa_comp = result['aa_comp']
-        
-        # 计算各种类型氨基酸的比例
-        total_aa = sum(aa_comp.values())
-        hydrophobic_aa = sum(aa_comp[aa] for aa in ['A', 'I', 'L', 'M', 'F', 'W', 'V'])
-        polar_aa = sum(aa_comp[aa] for aa in ['N', 'C', 'Q', 'S', 'T', 'Y'])
-        charged_aa = sum(aa_comp[aa] for aa in ['D', 'E', 'K', 'R'])
-        
-        # 计算百分比
-        hydrophobic_percent = (hydrophobic_aa / total_aa) * 100
-        polar_percent = (polar_aa / total_aa) * 100
-        charged_percent = (charged_aa / total_aa) * 100
-        
-        # 显示组成信息
-        st.markdown(f"#### 氨基酸组成概览")
-        cols = st.columns(3)
-        with cols[0]:
-            st.markdown(
-                f"""
-                <div class="metric-box">
-                    <p style="margin: 0; color: #666;">疏水性氨基酸</p>
-                    <p style="font-size: 1.2rem; font-weight: bold; margin: 5px 0;">{hydrophobic_percent:.1%}</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        with cols[1]:
-            st.markdown(
-                f"""
-                <div class="metric-box">
-                    <p style="margin: 0; color: #666;">极性氨基酸</p>
-                    <p style="font-size: 1.2rem; font-weight: bold; margin: 5px 0;">{polar_percent:.1%}</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        with cols[2]:
-            st.markdown(
-                f"""
-                <div class="metric-box">
-                    <p style="margin: 0; color: #666;">带电氨基酸</p>
-                    <p style="font-size: 1.2rem; font-weight: bold; margin: 5px 0;">{charged_percent:.1%}</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        
-        # 显示主要氨基酸
-        st.markdown("#### 主要氨基酸（按丰度排序）")
-        sorted_aa = sorted(aa_comp.items(), key=lambda x: x[1], reverse=True)
-        cols = st.columns(5)
-        for j, (aa, percentage) in enumerate(sorted_aa[:10]):
-            with cols[j % 5]:
-                st.markdown(
-                    f"""
-                    <div class="metric-box">
-                        <p style="font-size: 1.2rem; font-weight: bold; margin-bottom: 5px;">{aa}</p>
-                        <p style="margin: 0; color: #333;">{percentage:.1%}</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+    # 显示单独结果（如果存在）
+    if 'individual_analysis_results' in st.session_state and st.session_state.individual_analysis_results:
+        st.markdown("### 🧬 各序列单独理化性质")
+        for item in st.session_state.individual_analysis_results:
+            idx = item['index']
+            res = item['result']
+            # 使用 expander 默认折叠，实现用户要求的“点击可以显示”
+            with st.expander(f"序列 {idx+1} 详情", expanded=False):
+                display_physicochemical_properties(res)
 
 # 不再使用全局分析按钮，已移至每个序列的独立按钮
 
